@@ -1,0 +1,14 @@
+# Large / generated artifacts (keep locally or on Drive)
+datasets/downloaded/*.jsonl
+datasets/processed/*.jsonl
+!datasets/processed/.gitkeep
+!datasets/downloaded/.gitkeep
+outputs/adapters/*
+!outputs/adapters/.gitkeep
+outputs/vision_projector/*
+!outputs/vision_projector/.gitkeep
+outputs/logs/
+__pycache__/
+*.pyc
+wandb/
+.pytest_cache/

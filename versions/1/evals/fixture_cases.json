@@ -1,0 +1,7 @@
+[
+  {
+    "name": "synthetic_off_center_fixture",
+    "html_path": "../datasets/ui_artisan_synthetic/case_0000/index.html",
+    "expect_defect": "off_center"
+  }
+]

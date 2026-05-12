@@ -1,0 +1,70 @@
+# --- Hugging Face base model (large weights + cache) ---
+/model/*.safetensors
+/model/*.bin
+/model/*.pt
+/model/*.pth
+/model/.cache/
+/model/**/.cache/
+
+# Optional: ignore entire downloaded model tree (uncomment if you never commit weights)
+# /model/
+
+# --- Root adapter / checkpoint outputs ---
+/adapters/**/*.safetensors
+/adapters/**/*.bin
+/adapters/**/*.pt
+!/adapters/**/.gitkeep
+
+# --- Per-version training artifacts ---
+versions/*/training/datasets/downloaded/*.jsonl
+versions/*/training/datasets/processed/*.jsonl
+!versions/*/training/datasets/downloaded/.gitkeep
+!versions/*/training/datasets/processed/.gitkeep
+versions/*/training/outputs/
+versions/*/training/wandb/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# --- Weights & Biases (local run cache) ---
+wandb/
+
+# --- ML / checkpoints (often large) ---
+*.ckpt
+*.pt
+*.pth
+*.gguf
+*.ggml
+*.onnx
+*.mlmodel
+
+# --- Jupyter / Colab ---
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Logs & temp ---
+*.log
+*.tmp
+*.swp
+.cache/
+
+# --- Node (if you build frontend locally) ---
+node_modules/
+.next/
+out/
+dist/
+.turbo/

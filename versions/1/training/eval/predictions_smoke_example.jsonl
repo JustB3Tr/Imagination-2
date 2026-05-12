@@ -1,0 +1,2 @@
+{"id": "smoke_hello_py", "text": "print('hello')"}
+{"id": "smoke_list_comp", "text": "x = [i*i for i in range(5)]"}

@@ -1,0 +1,2 @@
+{"id": "smoke_hello_py", "messages": [{"role": "user", "content": "Reply with a single line of Python that prints the string hello (lowercase) using print()."}], "checks": ["print(", "hello"]}
+{"id": "smoke_list_comp", "messages": [{"role": "user", "content": "Write one line of Python: list comprehension for squares of 0..4."}], "checks": ["[", "for ", "in range"]}
