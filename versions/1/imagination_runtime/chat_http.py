@@ -30,6 +30,7 @@ from imagination_runtime.chat_web_research import (
     web_followups_enabled,
 )
 from imagination_runtime.http_chat_system import enrich_messages_with_imagination_system
+from imagination_runtime.think_tags import preserve_think_tags
 
 _GEN_LOCK = Lock()
 
@@ -70,7 +71,7 @@ def _iter_stream_with_heartbeat(
     if heartbeat_s <= 0:
         try:
             for text in stream_iter:
-                line = json.dumps({"text": prelude + text}, ensure_ascii=False) + "\n"
+                line = json.dumps({"text": preserve_think_tags(prelude + text)}, ensure_ascii=False) + "\n"
                 yield line.encode("utf-8")
         except Exception as e:
             err = json.dumps({"error": str(e)}, ensure_ascii=False) + "\n"
@@ -99,14 +100,14 @@ def _iter_stream_with_heartbeat(
             item = q.get(timeout=heartbeat_s)
         except Empty:
             # Heartbeat: re-emit current cumulative text so intermediary proxies see bytes.
-            yield (json.dumps({"text": last_text}, ensure_ascii=False) + "\n").encode("utf-8")
+            yield (json.dumps({"text": preserve_think_tags(last_text)}, ensure_ascii=False) + "\n").encode("utf-8")
             continue
         if item is SENTINEL:
             break
         kind, payload = item
         if kind == "text":
             last_text = prelude + payload
-            yield (json.dumps({"text": last_text}, ensure_ascii=False) + "\n").encode("utf-8")
+            yield (json.dumps({"text": preserve_think_tags(last_text)}, ensure_ascii=False) + "\n").encode("utf-8")
 
     if err_holder["exc"] is not None:
         err = json.dumps({"error": str(err_holder["exc"])}, ensure_ascii=False) + "\n"
@@ -361,7 +362,7 @@ def _generate_native(
     out = ""
     for chunk in _stream_native(messages, max_new_tokens, image=image):
         out = chunk
-    return out
+    return preserve_think_tags(out)
 
 
 def attach_generation_routes(app: FastAPI) -> None:

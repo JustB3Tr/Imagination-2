@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import Dict, List
 
+from imagination_runtime.think_tags import THINK_FORMAT_INSTRUCTION
+
 
 def enrich_messages_with_imagination_system(msgs: List[Dict[str, str]]) -> List[Dict[str, str]]:
     """Prepend server system prompt; drop any client-sent system (server is source of truth)."""
@@ -27,5 +29,6 @@ def enrich_messages_with_imagination_system(msgs: List[Dict[str, str]]) -> List[
         "",
         thread_kind=None,
     )
+    system_prompt = f"{system_prompt}\n\n{THINK_FORMAT_INSTRUCTION}"
     rest = [dict(m) for m in msgs if (m.get("role") or "").strip().lower() != "system"]
     return [{"role": "system", "content": system_prompt}] + rest

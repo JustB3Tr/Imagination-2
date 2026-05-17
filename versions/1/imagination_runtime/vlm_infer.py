@@ -17,6 +17,8 @@ from transformers import AutoModelForCausalLM
 
 from imagination_runtime.main_model_quant import main_lm_from_pretrained_kwargs, print_main_lm_load_banner
 from imagination_runtime.paths import resolve_vision_projector_bundle_dir
+from imagination_runtime.generation_guards import build_human_marker_guards
+from imagination_runtime.think_tags import add_think_structure_tokens, preserve_think_tags
 
 
 def _read_config_model_type(path: str) -> str:
@@ -47,6 +49,18 @@ def checkpoint_looks_like_vlm(path: str) -> bool:
     return False
 
 
+def _load_tokenizer_with_fallback(path: str):
+    try:
+        return AutoTokenizer.from_pretrained(path, use_fast=True, trust_remote_code=True)
+    except Exception as fast_err:
+        import warnings
+        warnings.warn(
+            f"Fast tokenizer load failed for {path}: {fast_err}. Falling back to use_fast=False.",
+            RuntimeWarning,
+        )
+        return AutoTokenizer.from_pretrained(path, use_fast=False, trust_remote_code=True)
+
+
 def load_main_model_auto(path: str) -> tuple[Any, Any, Any, bool]:
     """
     Returns (tokenizer_or_none, model, processor_or_none, is_vlm).
@@ -65,22 +79,22 @@ def load_main_model_auto(path: str) -> tuple[Any, Any, Any, bool]:
         print_main_lm_load_banner(path, clip_projector=True)
         print(f"[imagination] Projector bundle directory: {bundle_dir}", flush=True)
         tok, mdl, shim = load_clip_projector_bundle(path, bundle_dir)
+        add_think_structure_tokens(tok, mdl, label="main")
         return tok, mdl, shim, True
 
     if text_only or not checkpoint_looks_like_vlm(path):
         print_main_lm_load_banner(path, clip_projector=False)
-        tok = AutoTokenizer.from_pretrained(path, use_fast=True, trust_remote_code=True)
+        tok = _load_tokenizer_with_fallback(path)
         kwargs: Dict[str, Any] = main_lm_from_pretrained_kwargs()
         model = AutoModelForCausalLM.from_pretrained(path, **kwargs)
         if getattr(tok, "pad_token_id", None) is None:
             tok.pad_token = tok.eos_token
+        add_think_structure_tokens(tok, model, label="main")
         model.eval()
         return tok, model, None, False
 
     processor = AutoProcessor.from_pretrained(path, trust_remote_code=True)
-    tok = getattr(processor, "tokenizer", None) or AutoTokenizer.from_pretrained(
-        path, use_fast=True, trust_remote_code=True
-    )
+    tok = getattr(processor, "tokenizer", None) or _load_tokenizer_with_fallback(path)
     if getattr(tok, "pad_token_id", None) is None:
         tok.pad_token = tok.eos_token
 
@@ -103,6 +117,7 @@ def load_main_model_auto(path: str) -> tuple[Any, Any, Any, bool]:
 
         model = AutoModel.from_pretrained(path, **kwargs)
 
+    add_think_structure_tokens(tok, model, label="main")
     model.eval()
     return tok, model, processor, True
 
@@ -260,6 +275,28 @@ def generate_stream_vlm(
     if getattr(tokenizer, "pad_token_id", None) is not None:
         gen_kwargs["pad_token_id"] = tokenizer.pad_token_id
 
+    # Same contamination guard as text-only path.
+    guards = build_human_marker_guards(
+        tokenizer,
+        prompt_len=prompt_len,
+        device=device,
+    )
+    bad_words_ids = guards.get("bad_words_ids") or []
+    if bad_words_ids:
+        existing_bad = gen_kwargs.get("bad_words_ids") or []
+        gen_kwargs["bad_words_ids"] = [*existing_bad, *bad_words_ids]
+    stopping_criteria = guards.get("stopping_criteria")
+    if stopping_criteria is not None:
+        existing_stop = gen_kwargs.get("stopping_criteria")
+        if existing_stop is None:
+            gen_kwargs["stopping_criteria"] = stopping_criteria
+        else:
+            from transformers import StoppingCriteriaList
+
+            gen_kwargs["stopping_criteria"] = StoppingCriteriaList(
+                list(existing_stop) + list(stopping_criteria)
+            )
+
     def _run() -> None:
         try:
             with lock, torch.inference_mode():
@@ -282,7 +319,7 @@ def generate_stream_vlm(
         if gen_error["exc"] is not None:
             raise RuntimeError(f"VLM generation failed: {gen_error['exc']}") from gen_error["exc"]
         partial += chunk
-        yield partial
+        yield preserve_think_tags(partial)
     t.join(timeout=0.2)
     if gen_error["exc"] is not None:
         raise RuntimeError(f"VLM generation failed: {gen_error['exc']}") from gen_error["exc"]
