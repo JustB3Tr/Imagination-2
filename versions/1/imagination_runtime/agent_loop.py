@@ -40,6 +40,57 @@ def ui_loop_file_capture_from_env() -> bool:
     return _env_truthy("IMAGINATION_UI_LOOP")
 
 
+def _agent_observation_budget_chars() -> int:
+    """Maximum serialized tool-result size sent back into the model context."""
+    raw = (os.getenv("IMAGINATION_AGENT_MAX_OBSERVATION_CHARS") or "6000").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 6000
+    return max(1500, min(20000, value))
+
+
+def _head_tail_text(value: str, max_chars: int) -> str:
+    """Keep useful beginnings and failure-heavy tails without flooding the context."""
+    if len(value) <= max_chars:
+        return value
+    omitted = len(value) - max_chars
+    marker = f"\n...[{omitted} chars elided from observation]...\n"
+    available = max(64, max_chars - len(marker))
+    head_chars = int(available * 0.58)
+    tail_chars = available - head_chars
+    return value[:head_chars] + marker + value[-tail_chars:]
+
+
+def _compact_tool_result_for_prompt(tool_name: str, result: JsonDict) -> str:
+    """
+    Compact tool observations only for the next model call.
+
+    The full result is still emitted to the UI/event stream, so this reduces
+    prompt-prefill cost without hiding information from the user.
+    """
+    budget = _agent_observation_budget_chars()
+    data: JsonDict = dict(result)
+
+    if tool_name == "run_shell":
+        # Command failures usually explain themselves near the end of stderr,
+        # while stdout is useful at both the beginning and the tail.
+        if isinstance(data.get("stdout"), str):
+            data["stdout"] = _head_tail_text(str(data["stdout"]), max(900, int(budget * 0.34)))
+        if isinstance(data.get("stderr"), str):
+            data["stderr"] = _head_tail_text(str(data["stderr"]), max(900, int(budget * 0.34)))
+    elif tool_name == "read_file" and isinstance(data.get("content"), str):
+        data["content"] = _head_tail_text(str(data["content"]), max(1200, budget - 900))
+    elif tool_name == "write_file" and isinstance(data.get("diff"), str):
+        data["diff"] = _head_tail_text(str(data["diff"]), max(1200, budget - 900))
+    elif tool_name == "web_search" and "results" in data:
+        rendered_results = json.dumps(data["results"], ensure_ascii=False, default=str)
+        data["results"] = _head_tail_text(rendered_results, max(1200, budget - 900))
+
+    rendered = json.dumps(data, ensure_ascii=False, default=str)
+    return _head_tail_text(rendered, budget)
+
+
 _SESSIONS_LOCK = Lock()
 _SESSIONS: Dict[str, "AgentSessionState"] = {}
 
@@ -696,7 +747,10 @@ class AgenticLoop:
             convo.append(
                 {
                     "role": "system",
-                    "content": f"Tool result for {tool_name}: {json.dumps(result, ensure_ascii=False)[:12000]}",
+                    "content": (
+                        f"Tool result for {tool_name}: "
+                        f"{_compact_tool_result_for_prompt(tool_name, result)}"
+                    ),
                 }
             )
 
